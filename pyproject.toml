@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polydispers-lj-generator"
+version = "0.1.0"
+description = "A tool to generate polydisperse Lennard-Jones systems."
+authors = [
+    { name = "Jakub Krajniak", email = "jkrajniak@gmail.com" }
+]
+license = { text = "MIT" }
+dependencies = [
+    "numpy",
+    "scipy",
+    "tqdm"
+]

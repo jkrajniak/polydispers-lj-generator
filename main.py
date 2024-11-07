@@ -59,7 +59,7 @@ def sz_distribution_inverse_transform(Mn, PDI, size=1):
   return molecular_weights
 
 
-def generate_kremer_grest_chain(chain_length, bond_length=1.0, bead_radius=1.0):
+def generate_kremer_grest_chain(chain_length, bond_length, bead_radius):
   """
   Generates a single linear Kremer-Grest chain in 3D space, preventing 
   bead overlap. Assumes beads are spheres with the given radius and
@@ -75,21 +75,40 @@ def generate_kremer_grest_chain(chain_length, bond_length=1.0, bead_radius=1.0):
   """
   coordinates = np.zeros((chain_length, 3))
   coordinates[0] = np.array([0.0, 0.0, 0.0])  # Place the first bead at the origin
-
+  
   for i in range(1, chain_length):
     # print(f"Generating bead {i} / {chain_length} of chain ({i/chain_length*100:.2f}%)")
     valid_position = False
+    count = 0
     while not valid_position:
-      # Generate random direction in 3D
-      phi = np.random.uniform(0, np.pi)
-      theta = np.random.uniform(0, 2 * np.pi)
-      direction = np.array([
+# Get direction from previous beads
+      if i > 1:
+        direction = coordinates[i-1] - coordinates[i-2]
+        direction = direction / np.linalg.norm(direction)
+        
+        # Add small perturbation of 1-2 degrees
+        base_angle = np.random.uniform(1, 2)  # Base angle in degrees
+        angle = base_angle + (count / 1000) * 10  # Increase up to 10 degrees
+        angle = angle * np.pi / 180  # Convert to radians
+        
+        # Generate random rotation axis
+        random_axis = np.random.randn(3)
+        random_axis = random_axis / np.linalg.norm(random_axis)
+        
+        # Apply Rodrigues' rotation formula
+        cos_theta = np.cos(angle)
+        sin_theta = np.sin(angle)
+        direction = (direction * cos_theta + 
+                      np.cross(random_axis, direction) * sin_theta +
+                      random_axis * np.dot(random_axis, direction) * (1 - cos_theta))
+      else:  # This are the first two beads.
+        phi = np.random.uniform(0, np.pi)
+        theta = np.random.uniform(0, 2 * np.pi)
+        direction = np.array([
           np.sin(phi) * np.cos(theta), 
           np.sin(phi) * np.sin(theta), 
           np.cos(phi)
-      ])
-      # Let's use a constant direction
-      # direction = np.array([0, 0, 1])
+        ])
       next_position = coordinates[i-1] + bond_length * direction
 
       # Check for overlap with previous beads (considering bead radius)
@@ -99,8 +118,13 @@ def generate_kremer_grest_chain(chain_length, bond_length=1.0, bead_radius=1.0):
           valid_position = True
       else:
         valid_position = True  # No need to check for the second bead
-
+      
+      np.random.seed(i*count+i)
+      
+      count += 1
+    
     coordinates[i] = next_position
+    
   return coordinates
 
 
@@ -188,7 +212,7 @@ def write_pdb_file(filename: str,
         atomname: Name of all atoms (default: "C")
         resname: Name of all residues (default: "MOL")
         title: Title string
-    
+  
     PDB Format Reference:
     ATOM/HETATM (1-6)    Record name
     atom number (7-11)    Integer
@@ -209,6 +233,7 @@ def write_pdb_file(filename: str,
     # Convert nm to Angstroms for PDB format
     coords_ang = coordinates * 10.0
     box_ang = box_size * 10.0
+    resid = 1
     
     with open(filename, 'w') as f:
         # Write title
@@ -221,7 +246,6 @@ def write_pdb_file(filename: str,
         
         # Write atom coordinates
         for i, (x, y, z) in enumerate(coords_ang, start=1):
-            resid = (i - 1) // 1000 + 1  # New residue every 1000 atoms
             # Format atom line according to PDB standard
             line = (f"ATOM  {i:5d}  {atomname:<3s} {resname:3s} A{resid:4d}"
                    f"{x:12.3f}{y:8.3f}{z:8.3f}{1.0:6.2f}{0.0:6.2f}"
@@ -231,6 +255,22 @@ def write_pdb_file(filename: str,
         # Write END record
         f.write("END\n")
 
+
+def write_packmol_input(output_filename: str,
+                        filenames: list[str],
+                        box_size: float) -> None:
+  with open("packmol_input.txt", "w") as f:
+    f.write("tolerance 2.0\n")
+    f.write("filetype pdb\n")
+    f.write(f"output {output_filename}\n")
+    for filename in filenames:
+      f.write(f"""
+structure {filename}
+  number 1
+  inside box 0 0 0 {box_size} {box_size} {box_size}
+  resnumbers 0
+end structure
+      """)
 
 
 def parse_args():
@@ -260,21 +300,25 @@ def main():
   # Create output directory if it doesn't exist
   os.makedirs(output_dir, exist_ok=True)
   
+  max_box_size = 0
+  
   # Save each of the chain in a separate gro file
+  filenames = []
   for i, chain in enumerate(polymer_system):
-    box_size = 2 * bead_radius * np.ceil(np.max(chain))
+    box_size = 2 * bead_radius * np.ceil(np.max(chain))*10
     write_gro_file(f"{output_dir}/chain_{i}.gro", chain, box_size)
     write_pdb_file(f"{output_dir}/chain_{i}.pdb", chain, box_size)
-    # with open(f"{output_dir}/chain_{i}.gro", "w") as f:
-    #   f.write(f"Chain_{i}\n")
-    #   f.write(f"{len(chain)}\n")
-    #   for bead in chain:
-    #     f.write(f"{bead[0]:.3f} {bead[1]:.3f} {bead[2]:.3f}\n")
-    #   # Write the box size
-    #   box_size = 2 * bead_radius * np.ceil(np.max(chain))
-    #   f.write(f"{box_size} {box_size} {box_size}\n")
+    filenames.append(f"{output_dir}/chain_{i}.pdb")
+    max_box_size = max(max_box_size, box_size)
 
+  print(f"Max box size: {max_box_size}")
 
+  # Let's prepare input for packmol
+  
+  # Write the final box size to a file
+  
+  write_packmol_input("lj.pdb", filenames, max_box_size)
+  
 if __name__ == "__main__":
   main()
 
