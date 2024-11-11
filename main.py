@@ -1,24 +1,15 @@
 import argparse
 from functools import partial
 import os
+import random
 import numpy as np
-from scipy.special import gamma, gammainc
-from scipy.stats import uniform
 from tqdm import tqdm
 from multiprocessing import Pool
 
-
-import numpy as np
 from scipy.special import gamma, gammainc
-from scipy.stats import uniform
 
-import numpy as np
-from scipy.special import gamma, gammainc
-from scipy.stats import uniform
 
-import numpy as np
-from scipy.special import gamma, gammainc
-from scipy.stats import uniform
+from files_io import write_pdb_file, write_packmol_input, write_xyz_file
 
 
 def sz_distribution_inverse_transform(Mn, PDI, size=1):
@@ -59,7 +50,8 @@ def sz_distribution_inverse_transform(Mn, PDI, size=1):
   return molecular_weights
 
 
-def generate_kremer_grest_chain(chain_length, bond_length, bead_radius):
+def generate_kremer_grest_chain(chain_length: int, bond_length: float, bead_radius: float,
+                                box_size: float):
   """
   Generates a single linear Kremer-Grest chain in 3D space, preventing 
   bead overlap. Assumes beads are spheres with the given radius and
@@ -69,26 +61,40 @@ def generate_kremer_grest_chain(chain_length, bond_length, bead_radius):
     chain_length: Number of beads in the chain.
     bond_length: Equilibrium bond length for FENE potential.
     bead_radius: Radius of the beads.
+    box_size: Size of the cubic box.
 
   Returns:
     A NumPy array of shape (chain_length, 3) with the bead coordinates.
   """
   coordinates = np.zeros((chain_length, 3))
-  coordinates[0] = np.array([0.0, 0.0, 0.0])  # Place the first bead at the origin
+  coordinates[0] = np.array([0, 0, 0])  # Start in box center
+    
+  def apply_pbc(pos):
+    """Apply periodic boundary conditions"""
+    return pos
+    return pos - box_size * np.floor(pos / box_size)
+
+  def get_minimum_image_distance(pos1, pos2):
+      """Calculate minimum image distance between two points"""
+      delta = pos1 - pos2
+      return delta
+      delta = delta - box_size * np.round(delta / box_size)
+      return delta
+    
   
   for i in range(1, chain_length):
-    # print(f"Generating bead {i} / {chain_length} of chain ({i/chain_length*100:.2f}%)")
+    print(f"Generating bead {i} / {chain_length} of chain ({i/chain_length*100:.2f}%)", end="\r")
     valid_position = False
     count = 0
     while not valid_position:
-# Get direction from previous beads
       if i > 1:
-        direction = coordinates[i-1] - coordinates[i-2]
-        direction = direction / np.linalg.norm(direction)
+        delta = get_minimum_image_distance(coordinates[i-1], coordinates[i-2])
+        direction = delta / np.linalg.norm(delta)
         
-        # Add small perturbation of 1-2 degrees
-        base_angle = np.random.uniform(1, 2)  # Base angle in degrees
-        angle = base_angle + (count / 1000) * 10  # Increase up to 10 degrees
+        # Add small perturbation and ensure angle is in 1-180 range
+        base_angle = np.random.uniform(0, 30)  # Base angle in degrees
+        angle = (base_angle + (count / 1000) * 10) % 180  # Increase up to 10 degrees, wrap to 1-180
+        angle = max(1, angle)  # Ensure minimum of 1 degree
         angle = angle * np.pi / 180  # Convert to radians
         
         # Generate random rotation axis
@@ -110,17 +116,19 @@ def generate_kremer_grest_chain(chain_length, bond_length, bead_radius):
           np.cos(phi)
         ])
       next_position = coordinates[i-1] + bond_length * direction
+      next_position = apply_pbc(next_position)
 
       # Check for overlap with previous beads (considering bead radius)
       if i > 1:  # Only check for overlaps if there are at least 2 beads
-        distances = np.linalg.norm(coordinates[:i-1] - next_position, axis=1)
-        if np.all(distances >= bead_radius):  # Use bead_radius as the threshold
-          valid_position = True
+        valid_position = True
+        for j in range(i-2):
+            delta = get_minimum_image_distance(next_position, coordinates[j])
+            distance = np.linalg.norm(delta)
+            if distance < 2 * bead_radius:
+                valid_position = False
+                break
       else:
         valid_position = True  # No need to check for the second bead
-      
-      np.random.seed(i*count+i)
-      
       count += 1
     
     coordinates[i] = next_position
@@ -128,7 +136,7 @@ def generate_kremer_grest_chain(chain_length, bond_length, bead_radius):
   return coordinates
 
 
-def generate_polymer_system(num_chains, Mn, PDI, bond_length=1.0, bead_radius=1.0):
+def generate_polymer_system(num_chains, Mn, PDI, box_size, bond_length=1.0, bead_radius=1.0):
   """
   Generates a system of Kremer-Grest chains with Schulz-Zimm 
   molecular weight distribution in 3D space.
@@ -139,7 +147,8 @@ def generate_polymer_system(num_chains, Mn, PDI, bond_length=1.0, bead_radius=1.
     PDI: Polydispersity index.
     bond_length: Equilibrium bond length for FENE potential.
     bead_radius: Radius of the beads.
-
+    box_size: Size of the cubic box.
+    
   Returns:
     A list of NumPy arrays, where each array contains the coordinates 
     of a single chain.
@@ -151,126 +160,12 @@ def generate_polymer_system(num_chains, Mn, PDI, bond_length=1.0, bead_radius=1.
   
   # Generate chains in parallel
   fn_generator = partial(generate_kremer_grest_chain, bond_length=bond_length, 
-                         bead_radius=bead_radius)
-  with Pool(processes=2) as pool:
+                         bead_radius=bead_radius, box_size=box_size)
+  with Pool(processes=4) as pool:
     polymer_system = list(tqdm(pool.imap(fn_generator, chain_lengths), 
                                total=num_chains))
   return polymer_system
 
-
-def write_gro_file(filename: str, 
-                   coordinates: np.ndarray,
-                   box_size: float,
-                   atomname: str = "C",
-                   resname: str = "MOL",
-                   title: str = "Generated by gro_writer") -> None:
-    """
-    Write a GRO format file with simplified inputs.
-    
-    Args:
-        filename: Output .gro filename
-        coordinates: Numpy array of shape (N, 3) containing x,y,z coordinates in nm
-        box_size: Cubic box size in nm
-        atomname: Name of all atoms (default: "C")
-        resname: Name of all residues (default: "MOL")
-        title: Title string
-    """
-    n_atoms = len(coordinates)
-    
-    with open(filename, 'w') as f:
-        # Write title line
-        f.write(f"{title}\n")
-        
-        # Write number of atoms
-        f.write(f"{n_atoms}\n")
-        
-        # Write atom information
-        for i, (x, y, z) in enumerate(coordinates, start=1):
-            resid = 1
-            atomid = i
-            line = f"{resid:>5d}{resname:<5s}{atomname:>5s}{atomid:>5d}"
-            line += f"{x:8.3f}{y:8.3f}{z:8.3f}"
-            f.write(line + '\n')
-        
-        # Write box vectors (cubic box)
-        f.write(f"{box_size:10.5f}{box_size:10.5f}{box_size:10.5f}\n")
-
-
-def write_pdb_file(filename: str,
-                   coordinates: np.ndarray,
-                   box_size: float,
-                   atomname: str = "C",
-                   resname: str = "MOL",
-                   title: str = "Generated by pdb_writer") -> None:
-    """
-    Write a PDB format file with simplified inputs.
-    
-    Args:
-        filename: Output .pdb filename
-        coordinates: Numpy array of shape (N, 3) containing x,y,z coordinates in nm
-        box_size: Cubic box size in nm
-        atomname: Name of all atoms (default: "C")
-        resname: Name of all residues (default: "MOL")
-        title: Title string
-  
-    PDB Format Reference:
-    ATOM/HETATM (1-6)    Record name
-    atom number (7-11)    Integer
-    atom name (13-16)     Atom name
-    alt loc (17)          Alternate location indicator
-    residue name (18-20)  Residue name
-    chain (22)            Chain identifier
-    residue number (23-26) Integer
-    x (31-38)            Real(8.3) Orthogonal coordinates for X
-    y (39-46)            Real(8.3) Orthogonal coordinates for Y
-    z (47-54)            Real(8.3) Orthogonal coordinates for Z
-    occupancy (55-60)     Real(6.2)
-    temp factor (61-66)   Real(6.2)
-    segment id (73-76)    Segment identifier
-    element (77-78)       Element symbol
-    charge (79-80)        Charge
-    """
-    # Convert nm to Angstroms for PDB format
-    coords_ang = coordinates * 10.0
-    box_ang = box_size * 10.0
-    resid = 1
-    
-    with open(filename, 'w') as f:
-        # Write title
-        f.write(f"TITLE     {title}\n")
-        f.write(f"REMARK    Generated by pdb_writer\n")
-        
-        # Write crystal structure (box size)
-        # Format: CRYST1   50.000   50.000   50.000  90.00  90.00  90.00 P 1           1
-        f.write(f"CRYST1{box_ang:9.3f}{box_ang:9.3f}{box_ang:9.3f}  90.00  90.00  90.00 P 1           1\n")
-        
-        # Write atom coordinates
-        for i, (x, y, z) in enumerate(coords_ang, start=1):
-            # Format atom line according to PDB standard
-            line = (f"ATOM  {i:5d}  {atomname:<3s} {resname:3s} A{resid:4d}"
-                   f"{x:12.3f}{y:8.3f}{z:8.3f}{1.0:6.2f}{0.0:6.2f}"
-                   f"      {resname:<4s}{atomname:>2s}  \n")
-            f.write(line)
-        
-        # Write END record
-        f.write("END\n")
-
-
-def write_packmol_input(output_filename: str,
-                        filenames: list[str],
-                        box_size: float) -> None:
-  with open("packmol_input.txt", "w") as f:
-    f.write("tolerance 2.0\n")
-    f.write("filetype pdb\n")
-    f.write(f"output {output_filename}\n")
-    for filename in filenames:
-      f.write(f"""
-structure {filename}
-  number 1
-  inside box 0 0 0 {box_size} {box_size} {box_size}
-  resnumbers 0
-end structure
-      """)
 
 
 def parse_args():
@@ -279,11 +174,16 @@ def parse_args():
   parser.add_argument("--num_chains", type=int, default=1, help="Number of chains to generate.")
   parser.add_argument("--Mn", type=float, default=50, help="Number-average molecular weight.")
   parser.add_argument("--PDI", type=float, default=1.2, help="Polydispersity index.")
+  parser.add_argument("--box-size", type=float, default=500, help="Size of the cubic box. (Angstrom)")
   parser.add_argument("--output-dir", type=str, default=".", help="Output directory.")
+  parser.add_argument("--seed", type=int, default=42, help="Random seed.")
   return parser.parse_args()
 
 def main():
   args = parse_args()
+  
+  np.random.seed(args.seed)
+  random.seed(args.seed)
   
   # Example usage:
   num_chains = args.num_chains
@@ -291,8 +191,11 @@ def main():
   PDI = args.PDI
   bond_length = 0.85  # Example bond length
   bead_radius = 1.0  # Bead radius
-
-  polymer_system = generate_polymer_system(num_chains, Mn, PDI, bond_length, 
+  box_size = args.box_size
+  
+  single_chain_box_size = box_size
+  
+  polymer_system = generate_polymer_system(num_chains, Mn, PDI, single_chain_box_size, bond_length, 
                                            bead_radius)
   
   output_dir = f"{args.output_dir}/chains_{num_chains}_Mn{Mn}_PDI{PDI}"
@@ -300,24 +203,15 @@ def main():
   # Create output directory if it doesn't exist
   os.makedirs(output_dir, exist_ok=True)
   
-  max_box_size = 0
-  
   # Save each of the chain in a separate gro file
   filenames = []
   for i, chain in enumerate(polymer_system):
-    box_size = 2 * bead_radius * np.ceil(np.max(chain))*10
-    write_gro_file(f"{output_dir}/chain_{i}.gro", chain, box_size)
-    write_pdb_file(f"{output_dir}/chain_{i}.pdb", chain, box_size)
-    filenames.append(f"{output_dir}/chain_{i}.pdb")
-    max_box_size = max(max_box_size, box_size)
+    # write_pdb_file(f"{output_dir}/chain_{i}.pdb", chain, single_chain_box_size)
+    write_xyz_file(f"{output_dir}/chain_{i}.xyz", chain)
+    filenames.append(f"{output_dir}/chain_{i}.xyz")
 
-  print(f"Max box size: {max_box_size}")
-
-  # Let's prepare input for packmol
-  
-  # Write the final box size to a file
-  
-  write_packmol_input("lj.pdb", filenames, max_box_size)
+  print(f"Box size: {single_chain_box_size}")
+  write_packmol_input("lj.xyz", filenames, box_size, filetype="xyz")
   
 if __name__ == "__main__":
   main()
