@@ -9,9 +9,14 @@ description = "A tool to generate polydisperse Lennard-Jones systems."
 authors = [
     { name = "Jakub Krajniak", email = "jkrajniak@gmail.com" }
 ]
+scripts = { "polydispers-generator" = "polydispers.cli:main", "polydispers-lammps" = "polydispers.cli:prepare_lammps" }
 license = { text = "MIT" }
 dependencies = [
     "numpy",
     "scipy",
     "tqdm"
 ]
+
+[tool.setuptools.packages.find]
+where = [""]
+include = ["polydispers"]
