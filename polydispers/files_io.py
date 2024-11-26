@@ -126,8 +126,9 @@ def write_pdb_file(filename: str,
 def write_packmol_input(output_filename: str,
                         filenames: list[str],
                         box_size: float,
-                        filetype: str = "pdb") -> None:
-  with open("packmol_input.txt", "w") as f:
+                        output_packmol_filename: str,
+                        filetype: str = "xyz") -> None:
+  with open(output_packmol_filename, "w") as f:
     f.write("tolerance 2.0\n")
     f.write(f"filetype {filetype}\n")
     f.write(f"output {output_filename}\n")

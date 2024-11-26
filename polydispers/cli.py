@@ -84,20 +84,35 @@ def main():
         filenames.append(f"{output_dir}/chain_{i}.xyz")
 
     print(f"Box size: {single_chain_box_size}")
-    write_packmol_input("lj.xyz", filenames, box_size, filetype="xyz")
+    write_packmol_input(f"{output_dir}/lj.xyz", filenames, box_size, f"{output_dir}/packmol_input.txt")
 
     # Write topology file
     write_topology_file(f"{output_dir}/topology.yaml", chain_lengths)
-
+    
+    print(f"\nTopology file written to {output_dir}/topology.yaml")
+    print(f"Packmol input file written to {output_dir}/packmol_input.txt\n")
+    
+    # Next steps
+    print("-"*100)
+    print("Next steps:")
+    print("-"*100)
+    print(f"1. Run packmol with input file {output_dir}/packmol_input.txt\n")
+    print(f"packmol < {output_dir}/packmol_input.txt\n")
+    print(f"2. Prepare LAMMPS input files for the generated polymer system.\n")
+    print(f"python polydispers-lammps.py --topology-file {output_dir}/topology.yaml --box-size {box_size} --coordinates {output_dir}/lj.xyz --output-file {output_dir}/lj.data\n")
+    print(f"3. Run lammps with data file {output_dir}/lj.data\n")
+    print(f"lmp -in {output_dir}/lj.data\n")
 
 def prepare_lammps():
     parser = argparse.ArgumentParser("Prepare LAMMPS input files for the generated polymer system.")
     parser.add_argument("--topology-file", type=str, required=True, help="Path to the topology file.")
     parser.add_argument("--coordinates", type=str, required=True, help="Path to the coordinates file.")
     parser.add_argument("--output-file", type=str, required=True, help="Path to the output LAMMPS data file.")
+    parser.add_argument("--box-size", type=float, required=True, help="Size of the cubic box.")
 
     args = parser.parse_args()
 
+    box_size = args.box_size
     chain_description, bond_list = read_topology_file(args.topology_file)
 
     coordinates = np.loadtxt(args.coordinates, skiprows=2, usecols=(1, 2, 3))
@@ -110,9 +125,9 @@ def prepare_lammps():
         out_lmp.write("1 atom types\n")
         out_lmp.write("1 bond types\n")
         out_lmp.write("\n")
-        out_lmp.write("0.0 500.0 xlo xhi\n")
-        out_lmp.write("0.0 500.0 ylo yhi\n")
-        out_lmp.write("0.0 500.0 zlo zhi\n")
+        out_lmp.write(f"0.0 {box_size} xlo xhi\n")
+        out_lmp.write(f"0.0 {box_size} ylo yhi\n")
+        out_lmp.write(f"0.0 {box_size} zlo zhi\n")
         out_lmp.write("\n")
         out_lmp.write("Atoms\n\n")
         for i, (atom_id, _, res_id, _) in enumerate(chain_description, start=1):
