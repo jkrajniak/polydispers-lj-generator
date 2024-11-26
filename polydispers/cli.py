@@ -8,7 +8,7 @@ from multiprocessing import Pool
 
 from polydispers.chain_generator import generate_kremer_grest_chain
 from polydispers.stats import sz_distribution_inverse_transform
-from polydispers.files_io import write_pdb_file, write_packmol_input, write_xyz_file, write_topology_file, \
+from polydispers.files_io import write_lammps_data, write_lammps_input, write_pdb_file, write_packmol_input, write_xyz_file, write_topology_file, \
     read_topology_file
 
 
@@ -116,24 +116,12 @@ def prepare_lammps():
     chain_description, bond_list = read_topology_file(args.topology_file)
 
     coordinates = np.loadtxt(args.coordinates, skiprows=2, usecols=(1, 2, 3))
+    
+    data_file = args.output_file.split(".")[0] + ".data"
+    in_file = args.output_file.split(".")[0] + ".in"
+    
     # Write LAMMPS data file
-    with open(args.output_file, 'w+') as out_lmp:
-        out_lmp.write("LAMMPS data file\n\n")
-        out_lmp.write(f"{len(coordinates)} atoms\n")
-        out_lmp.write(f"{len(bond_list)} bonds\n")
-        out_lmp.write("\n")
-        out_lmp.write("1 atom types\n")
-        out_lmp.write("1 bond types\n")
-        out_lmp.write("\n")
-        out_lmp.write(f"0.0 {box_size} xlo xhi\n")
-        out_lmp.write(f"0.0 {box_size} ylo yhi\n")
-        out_lmp.write(f"0.0 {box_size} zlo zhi\n")
-        out_lmp.write("\n")
-        out_lmp.write("Atoms\n\n")
-        for i, (atom_id, _, res_id, _) in enumerate(chain_description, start=1):
-            x, y, z = coordinates[i - 1]
-            out_lmp.write(f"{i} {res_id} {res_id} {x} {y} {z}\n")
-        out_lmp.write("\n")
-        out_lmp.write("Bonds\n\n")
-        for i, (atom_i, atom_j) in enumerate(bond_list, start=1):
-            out_lmp.write(f"{i} 1 {atom_i} {atom_j}\n")
+    write_lammps_data(data_file, coordinates, chain_description, bond_list, box_size)
+    
+    # Write LAMMPS input file
+    write_lammps_input(in_file, data_file)

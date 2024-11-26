@@ -1,5 +1,6 @@
-
+import os
 import numpy as np
+import yaml
 
 
 def write_gro_file(filename: str, 
@@ -197,18 +198,86 @@ def read_topology_file(filename: str) -> tuple[list[tuple[int, str, int, str]], 
     """Reads a topology file and returns chain_description and bond_list"""
     chain_description: list[tuple[int, str, int, str]] = []
     bond_list: list[tuple[int, int]] = []
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-        for i, line in enumerate(lines):
-            if line.startswith("chain_description:"):
-                for j in range(i+2, len(lines)):
-                    if lines[j].startswith("bond_list:"):
-                        break
-                    values = lines[j].strip().split(", ")
-                    chain_description.append(tuple(map(eval, values)))
-            elif line.startswith("bond_list:"):
-                for j in range(i+2, len(lines)):
-                    values = lines[j].strip().split(", ")
-                    bond_list.append(tuple(map(eval, values)))
+    
+    with open(filename, 'r') as in_yaml:
+        yaml_data = yaml.safe_load(in_yaml)
+    
+    # split yaml_data['chain_description']['values'] into a list of tuples
+    chain_description = [tuple(map(str.strip, row.split(","))) for row in yaml_data['chain_description']['values'].split("\n") if row.strip()]
+    
+    # split yaml_data['bond_list']['values'] into a list of tuples
+    bond_list = [tuple(map(str.strip, row.split(","))) for row in yaml_data['bond_list']['values'].split("\n") if row.strip()]
 
     return chain_description, bond_list
+
+
+def write_lammps_input(filename, data_file):
+    with open(filename, 'w+') as f:
+        f.write("""# LAMMPS input script for polymer simulation
+units           lj
+atom_style      molecular
+boundary        p p p
+
+# Set special bonds for FENE potential
+special_bonds   lj 0.0 1.0 1.0
+
+read_data       {}
+
+# Set mass for atom type 1
+mass            1 1.0
+
+# First minimize to fix any bad contacts or stretched bonds
+minimize        1.0e-4 1.0e-6 1000 10000
+
+# Reset time and unwrap molecules
+reset_timestep  0
+fix             unwrap all recenter INIT INIT INIT
+fix             rewrap all wrap
+
+pair_style      lj/cut 2.5
+pair_coeff      1 1 1.0 1.0 2.5
+
+bond_style      fene
+bond_coeff      1 30.0 1.5 1.0 1.0
+
+timestep        0.005
+
+fix             1 all nve
+fix             2 all langevin 1.0 1.0 1.0 12345
+
+thermo          1000
+thermo_style    custom step temp press density
+
+dump            1 all custom 1000 traj.lammpstrj id type x y z
+
+# Run with very small timestep initially to fix any remaining issues
+run             1000
+unfix           unwrap
+unfix           rewrap
+
+# Continue with normal simulation
+run             100000
+""".format(os.path.basename(data_file)))
+        
+def write_lammps_data(filename, coordinates, chain_description, bond_list, box_size):
+    with open(filename, 'w+') as out_lmp:
+        out_lmp.write("LAMMPS data file\n\n")
+        out_lmp.write(f"{len(coordinates)} atoms\n")
+        out_lmp.write(f"{len(bond_list)} bonds\n")
+        out_lmp.write("\n")
+        out_lmp.write("1 atom types\n")
+        out_lmp.write("1 bond types\n")
+        out_lmp.write("\n")
+        out_lmp.write(f"0.0 {box_size} xlo xhi\n")
+        out_lmp.write(f"0.0 {box_size} ylo yhi\n")
+        out_lmp.write(f"0.0 {box_size} zlo zhi\n")
+        out_lmp.write("\n")
+        out_lmp.write("Atoms\n\n")
+        # Format: atom-ID molecule-ID atom-type x y z
+        for i, (atom_id, _, res_id, _) in enumerate(chain_description, start=1):
+            x, y, z = coordinates[i - 1]
+            out_lmp.write(f"{i} {res_id} 1 {x} {y} {z}\n")  # Changed atom type to always be 1
+        out_lmp.write("\n")
+        out_lmp.write("Bonds\n\n")
+        for i, (atom_i, atom_j) in enumerate(bond_list, start=1):
+            out_lmp.write(f"{i} 1 {atom_i} {atom_j}\n")
