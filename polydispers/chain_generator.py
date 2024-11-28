@@ -1,34 +1,37 @@
 import numpy as np
 
 
-def generate_kremer_grest_chain(chain_length: int, bond_length: float, bead_radius: float,
-                                box_size: float):
+def generate_kremer_grest_chain(
+    chain_length: int, bond_length: float, bead_radius: float, box_size: float, disable_pbc: bool = False
+):
     """
-  Generates a single linear Kremer-Grest chain in 3D space, preventing
-  bead overlap. Assumes beads are spheres with the given radius and
-  a Lennard-Jones potential with sigma = 1.0.
+    Generates a single linear Kremer-Grest chain in 3D space, preventing
+    bead overlap. Assumes beads are spheres with the given radius and
+    a Lennard-Jones potential with sigma = 1.0.
 
-  Args:
-    chain_length: Number of beads in the chain.
-    bond_length: Equilibrium bond length for FENE potential.
-    bead_radius: Radius of the beads.
-    box_size: Size of the cubic box.
-
-  Returns:
-    A NumPy array of shape (chain_length, 3) with the bead coordinates.
-  """
+    Args:
+      chain_length: Number of beads in the chain.
+      bond_length: Equilibrium bond length for FENE potential.
+      bead_radius: Radius of the beads.
+      box_size: Size of the cubic box.
+      disable_pbc: Whether to disable periodic boundary conditions.
+    Returns:
+      A NumPy array of shape (chain_length, 3) with the bead coordinates.
+    """
     coordinates = np.zeros((chain_length, 3))
     coordinates[0] = np.array([0, 0, 0])  # Start in box center
 
     def apply_pbc(pos):
         """Apply periodic boundary conditions"""
-        # return pos
+        if disable_pbc:
+            return pos
         return pos - box_size * np.floor(pos / box_size)
 
     def get_minimum_image_distance(pos1, pos2):
         """Calculate minimum image distance between two points"""
         delta = pos1 - pos2
-        # return delta
+        if disable_pbc:
+            return delta
         delta = delta - box_size * np.round(delta / box_size)
         return delta
 
@@ -54,17 +57,15 @@ def generate_kremer_grest_chain(chain_length: int, bond_length: float, bead_radi
                 # Apply Rodrigues' rotation formula
                 cos_theta = np.cos(angle)
                 sin_theta = np.sin(angle)
-                direction = (direction * cos_theta +
-                             np.cross(random_axis, direction) * sin_theta +
-                             random_axis * np.dot(random_axis, direction) * (1 - cos_theta))
+                direction = (
+                    direction * cos_theta
+                    + np.cross(random_axis, direction) * sin_theta
+                    + random_axis * np.dot(random_axis, direction) * (1 - cos_theta)
+                )
             else:  # This are the first two beads.
                 phi = np.random.uniform(0, np.pi)
                 theta = np.random.uniform(0, 2 * np.pi)
-                direction = np.array([
-                    np.sin(phi) * np.cos(theta),
-                    np.sin(phi) * np.sin(theta),
-                    np.cos(phi)
-                ])
+                direction = np.array([np.sin(phi) * np.cos(theta), np.sin(phi) * np.sin(theta), np.cos(phi)])
             next_position = coordinates[i - 1] + bond_length * direction
             next_position = apply_pbc(next_position)
 

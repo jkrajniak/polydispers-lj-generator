@@ -21,3 +21,15 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = [""]
 include = ["polydispers"]
+
+[tool.black]
+line-length = 120
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.ruff]
+line-length = 120
