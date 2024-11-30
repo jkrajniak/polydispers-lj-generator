@@ -103,7 +103,7 @@ def main():
     write_packmol_input(f"{output_dir}/lj.xyz", filenames, box_size, f"{output_dir}/packmol_input.txt")
 
     # Write topology file
-    write_topology_file(f"{output_dir}/topology.yaml", chain_lengths)
+    write_topology_file(f"{output_dir}/topology.yaml", box_size, chain_lengths)
 
     print(f"\nTopology file written to {output_dir}/topology.yaml")
     print(f"Packmol input file written to {output_dir}/packmol_input.txt\n")
@@ -118,7 +118,7 @@ def main():
     print(
         (
             f"polydispers-lammps --topology-file {output_dir}/topology.yaml "
-            f"--box-size {box_size} --coordinates {output_dir}/lj.xyz "
+            f"--coordinates {output_dir}/lj.xyz "
             f"--output-file {output_dir}/lj.data\n"
         )
     )
@@ -132,7 +132,6 @@ def main():
         f.write(
             f"polydispers-lammps --topology-file {output_dir}/topology.yaml "
             f"--box-size {box_size} --coordinates {output_dir}/lj.xyz "
-            f"--output-file {output_dir}/lj.data\n"
         )
         f.write(f"lmp -in {output_dir}/lj.data\n")
     print(f"Instructions written to {output_dir}/instructions.sh")
@@ -143,21 +142,25 @@ def prepare_lammps():
     parser = argparse.ArgumentParser("Prepare LAMMPS input files for the generated polymer system.")
     parser.add_argument("--topology-file", type=str, required=True, help="Path to the topology file.")
     parser.add_argument("--coordinates", type=str, required=True, help="Path to the coordinates file.")
-    parser.add_argument("--output-file", type=str, required=True, help="Path to the output LAMMPS data file.")
-    parser.add_argument("--box-size", type=float, required=True, help="Size of the cubic box.")
 
     args = parser.parse_args()
 
-    box_size = args.box_size
-    chain_description, bond_list = read_topology_file(args.topology_file)
-
+    chain_description, bond_list, box_size = read_topology_file(args.topology_file)
     coordinates = np.loadtxt(args.coordinates, skiprows=2, usecols=(1, 2, 3))
 
-    data_file = args.output_file.split(".")[0] + ".data"
-    in_file = args.output_file.split(".")[0] + ".in"
+    # Get basedir from coordintates file
+    basedir = os.path.dirname(args.coordinates)
+
+    # Get filename from coordinates file
+    filename = os.path.basename(args.coordinates)
+
+    data_file = os.path.join(basedir, filename.split(".")[0] + ".data")
+    in_file = os.path.join(basedir, filename.split(".")[0] + ".in")
 
     # Write LAMMPS data file
     write_lammps_data(data_file, coordinates, chain_description, bond_list, box_size)
+    print(f"LAMMPS data file written to {data_file}")
 
     # Write LAMMPS input file
     write_lammps_input(in_file, data_file)
+    print(f"LAMMPS input file written to {in_file}")
