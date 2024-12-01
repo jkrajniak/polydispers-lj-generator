@@ -1,9 +1,9 @@
-import argparse
 import os
 import random
 from functools import partial
 from multiprocessing import Pool
 
+import click
 import numpy as np
 from tqdm import tqdm
 
@@ -55,39 +55,34 @@ def generate_polymer_system(
     return polymer_system, chain_lengths
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Generate a polymer system with a given number of chains, molecular weight, and polydispersity index."
-        )
-    )
-    parser.add_argument("--num_chains", type=int, default=1, help="Number of chains to generate.")
-    parser.add_argument("--Mn", type=float, default=50, help="Number-average molecular weight.")
-    parser.add_argument("--PDI", type=float, default=1.2, help="Polydispersity index.")
-    parser.add_argument("--box-size", type=float, default=500, help="Size of the cubic box. (Angstrom)")
-    parser.add_argument("--output-dir", type=str, default=".", help="Output directory.")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--disable-pbc", action="store_true", help="Disable periodic boundary conditions.")
-    args = parser.parse_args()
+@click.group()
+def cli():
+    """Generate and prepare polymer systems for LAMMPS simulation."""
+    pass
 
-    np.random.seed(args.seed)
-    random.seed(args.seed)
 
-    # Example usage:
-    num_chains = args.num_chains
-    Mn = args.Mn
-    PDI = args.PDI
-    bond_length = 0.85  # Example bond length
-    bead_radius = 1.0  # Bead radius
-    box_size = args.box_size
+@cli.command()
+@click.option("--num-chains", type=int, default=1, help="Number of chains to generate.")
+@click.option("--mn", type=float, default=50, help="Number-average molecular weight.")
+@click.option("--pdi", type=float, default=1.2, help="Polydispersity index.")
+@click.option("--box-size", type=float, default=500, help="Size of the cubic box. (Angstrom)")
+@click.option("--output-dir", type=str, default=".", help="Output directory.")
+@click.option("--seed", type=int, default=42, help="Random seed.")
+@click.option("--disable-pbc", is_flag=True, help="Disable periodic boundary conditions.")
+def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
+    """Generate a polymer system with specified parameters."""
+    np.random.seed(seed)
+    random.seed(seed)
 
+    bond_length = 0.85
+    bead_radius = 1.0
     single_chain_box_size = box_size
 
     polymer_system, chain_lengths = generate_polymer_system(
-        num_chains, Mn, PDI, single_chain_box_size, bond_length, bead_radius, args.disable_pbc
+        num_chains, mn, pdi, single_chain_box_size, bond_length, bead_radius, disable_pbc
     )
 
-    output_dir = f"{args.output_dir}/chains_{num_chains}_Mn{Mn}_PDI{PDI}"
+    output_dir = f"{output_dir}/chains_{num_chains}_Mn{mn}_PDI{pdi}"
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -130,37 +125,33 @@ def main():
         f.write("#! /bin/bash\n")
         f.write(f"packmol < {output_dir}/packmol_input.txt\n")
         f.write(
-            f"polydispers-lammps --topology-file {output_dir}/topology.yaml "
-            f"--box-size {box_size} --coordinates {output_dir}/lj.xyz "
+            f"polydispers lammps --topology-file {output_dir}/topology.yaml " f"--coordinates {output_dir}/lj.xyz" "\n"
         )
         f.write(f"lmp -in {output_dir}/lj.data\n")
     print(f"Instructions written to {output_dir}/instructions.sh")
     print(f"You can now run the script {output_dir}/instructions.sh to prepare the system.\n")
 
 
-def prepare_lammps():
-    parser = argparse.ArgumentParser("Prepare LAMMPS input files for the generated polymer system.")
-    parser.add_argument("--topology-file", type=str, required=True, help="Path to the topology file.")
-    parser.add_argument("--coordinates", type=str, required=True, help="Path to the coordinates file.")
+@cli.command()
+@click.option("--topology-file", type=str, required=True, help="Path to the topology file.")
+@click.option("--coordinates", type=str, required=True, help="Path to the coordinates file.")
+def lammps(topology_file, coordinates):
+    """Prepare LAMMPS input files for the generated polymer system."""
+    basedir = os.path.dirname(coordinates)
+    filename = os.path.basename(coordinates)
 
-    args = parser.parse_args()
-
-    chain_description, bond_list, box_size = read_topology_file(args.topology_file)
-    coordinates = np.loadtxt(args.coordinates, skiprows=2, usecols=(1, 2, 3))
-
-    # Get basedir from coordintates file
-    basedir = os.path.dirname(args.coordinates)
-
-    # Get filename from coordinates file
-    filename = os.path.basename(args.coordinates)
+    chain_description, bond_list, box_size = read_topology_file(topology_file)
+    coordinates = np.loadtxt(coordinates, skiprows=2, usecols=(1, 2, 3))
 
     data_file = os.path.join(basedir, filename.split(".")[0] + ".data")
     in_file = os.path.join(basedir, filename.split(".")[0] + ".in")
 
-    # Write LAMMPS data file
     write_lammps_data(data_file, coordinates, chain_description, bond_list, box_size)
-    print(f"LAMMPS data file written to {data_file}")
+    click.echo(f"LAMMPS data file written to {data_file}")
 
-    # Write LAMMPS input file
     write_lammps_input(in_file, data_file)
-    print(f"LAMMPS input file written to {in_file}")
+    click.echo(f"LAMMPS input file written to {in_file}")
+
+
+if __name__ == "__main__":
+    cli()
