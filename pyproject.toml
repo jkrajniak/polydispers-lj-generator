@@ -34,3 +34,9 @@ multi_line_output = 3
 
 [tool.ruff]
 line-length = 120
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]

@@ -2,7 +2,11 @@ import numpy as np
 
 
 def generate_kremer_grest_chain(
-    chain_length: int, bond_length: float, bead_radius: float, box_size: float, disable_pbc: bool = False
+    chain_length: int,
+    bond_length: float,
+    bead_radius: float,
+    box_size: float,
+    disable_pbc: bool = False,
 ):
     """
     Generates a single linear Kremer-Grest chain in 3D space, preventing

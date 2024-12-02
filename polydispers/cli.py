@@ -68,7 +68,6 @@ def cli():
 @click.option("--box-size", type=float, default=500, help="Size of the cubic box. (Angstrom)")
 @click.option("--output-dir", type=str, default=".", help="Output directory.")
 @click.option("--seed", type=int, default=42, help="Random seed.")
-@click.option("--disable-pbc", is_flag=True, help="Disable periodic boundary conditions.")
 def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
     """Generate a polymer system with specified parameters."""
     np.random.seed(seed)
@@ -79,7 +78,7 @@ def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
     single_chain_box_size = box_size
 
     polymer_system, chain_lengths = generate_polymer_system(
-        num_chains, mn, pdi, single_chain_box_size, bond_length, bead_radius, disable_pbc
+        num_chains, mn, pdi, single_chain_box_size, bond_length, bead_radius, True
     )
 
     output_dir = f"{output_dir}/chains_{num_chains}_Mn{mn}_PDI{pdi}"
