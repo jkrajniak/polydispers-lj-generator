@@ -1,0 +1,17 @@
+num_chains: 50
+mn: 10000
+pdi: 1.2
+box_size: 200
+output_dir: ./sys1
+seed: 42
+polymer:
+  bond_length: 0.85
+  bead_radius: 1.0
+  repeat_unit_topology: AB
+  bead_types:
+    A:
+      mass: 1.0
+      type_id: 1
+    B:
+      mass: 1.0
+      type_id: 2

@@ -1,11 +1,25 @@
 import os
-from string import Template
+from collections import namedtuple
 
 import numpy as np
 import yaml
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 from polydispers.input_config import InputConfig
 from polydispers.topology_config import TopologyConfig
+
+# Define namedtuples for topology data
+TopologyAtom = namedtuple("TopologyAtom", ["atom_id", "atom_name", "residue_id", "residue_name", "mass", "type_id"])
+TopologyBond = namedtuple("TopologyBond", ["atom_i", "atom_j"])
+TopologyData = namedtuple("TopologyData", ["chain_description", "bond_list", "box_size"])
+
+# Initialize Jinja2 environment
+env = Environment(
+    loader=PackageLoader("polydispers", "templates"),
+    autoescape=select_autoescape(),
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
 
 
 def write_gro_file(
@@ -177,7 +191,7 @@ def write_topology_file(filename: str, config: InputConfig, num_repeat_units: li
 
         # Write chain description
         out_yaml.write("chain_description:\n")
-        out_yaml.write(f'    repeat_unit_topology: "{config.repeat_unit_topology}"\n')
+        out_yaml.write(f'    repeat_unit_topology: "{config.polymer.repeat_unit_topology}"\n')
         out_yaml.write("    chain_lengths: [")
         out_yaml.write(", ".join(map(str, num_repeat_units)))
         out_yaml.write("]\n")
@@ -185,22 +199,22 @@ def write_topology_file(filename: str, config: InputConfig, num_repeat_units: li
         # Write polymer information
         out_yaml.write("polymer:\n")
         out_yaml.write("    bead_types:\n")
-        for bead_type in set(config.repeat_unit_topology):
+        for bead_type in set(config.polymer.repeat_unit_topology):
             out_yaml.write(f"        {bead_type}:\n")
-            out_yaml.write(f"            mass: {config.bead_masses[bead_type]}\n")
-            out_yaml.write(f"            type_id: {ord(bead_type) - ord('A') + 1}\n")
+            out_yaml.write(f"            mass: {config.polymer.bead_types[bead_type].mass}\n")
+            out_yaml.write(f"            type_id: {config.polymer.bead_types[bead_type].type_id}\n")
 
 
-def read_topology_file(filename: str) -> tuple[list[tuple], list[tuple[int, int]], float]:
+def read_topology_file(filename: str) -> TopologyData:
     """Reads a topology file and returns chain_description, bond_list and box_size
 
     Args:
         filename: Path to the topology YAML file
 
     Returns:
-        Tuple of (chain_description, bond_list, box_size) where:
-        - chain_description: List of (atom_id, atom_name, residue_id, residue_name, mass)
-        - bond_list: List of (atom_i, atom_j)
+        TopologyData containing:
+        - chain_description: List of TopologyAtom(atom_id, atom_name, residue_id, residue_name, mass, type_id)
+        - bond_list: List of TopologyBond(atom_i, atom_j)
         - box_size: Box size value
     """
     with open(filename, "r") as in_yaml:
@@ -219,12 +233,13 @@ def read_topology_file(filename: str) -> tuple[list[tuple], list[tuple[int, int]
             # For each bead in the repeat unit topology
             for bead_type in topology.chain_description.repeat_unit_topology:
                 chain_description.append(
-                    (
-                        atom_id,  # atom_id
-                        bead_type,  # atom_name
-                        chain_idx,  # residue_id
-                        "MOL",  # residue_name
-                        topology.polymer.bead_types[bead_type].mass,  # mass
+                    TopologyAtom(
+                        atom_id=atom_id,
+                        atom_name=bead_type,
+                        residue_id=chain_idx,
+                        residue_name="MOL",
+                        mass=topology.polymer.bead_types[bead_type].mass,
+                        type_id=topology.polymer.bead_types[bead_type].type_id,
                     )
                 )
                 atom_id += 1
@@ -245,44 +260,65 @@ def read_topology_file(filename: str) -> tuple[list[tuple], list[tuple[int, int]
 
         # Connect atoms within the chain
         for j in range(chain_start, chain_start + chain_length - 1):
-            bond_list.append((j, j + 1))
+            bond_list.append(TopologyBond(atom_i=j, atom_j=j + 1))
 
-    return chain_description, bond_list, topology.box_size
+    return TopologyData(chain_description=chain_description, bond_list=bond_list, box_size=topology.box_size)
 
 
-def write_lammps_input(filename, data_file):
-    # Get absolute paths
-    output_dir = os.path.dirname(os.path.abspath(filename))
+def write_lammps_input(filename: str, data_file: str, topology_data: TopologyData) -> None:
+    """Write LAMMPS input script using Jinja2 template.
 
-    template_dir = os.path.dirname(os.path.abspath(__file__))
+    Args:
+        filename: Output LAMMPS input script filename
+        data_file: Path to LAMMPS data file
+        topology_data: Topology data containing atom types and masses
+    """
+    # Get unique masses for each type_id
+    masses = {}
+    for atom in topology_data.chain_description:
+        if atom.type_id not in masses:
+            masses[atom.type_id] = atom.mass
 
-    with open(filename, "w+") as f:
-        # Open template and render
-        with open(os.path.join(template_dir, "lammps_in.tpl"), "r") as template:
-            template = Template(template.read())
-            rendered = template.substitute(output_dir=output_dir)
-            f.write(rendered)
+    # Get template and render
+    template = env.get_template("lammps_in.j2")
+    output_dir = os.path.dirname(os.path.abspath(data_file))
+
+    rendered = template.render(data_file=data_file, output_dir=output_dir, masses=masses)
+
+    # Write rendered template
+    with open(filename, "w") as f:
+        f.write(rendered)
 
 
 def write_lammps_data(filename, coordinates, chain_description, bond_list, box_size):
+    # Get unique atom types and their type_ids from the topology
+    max_type_id = max(atom.type_id for atom in chain_description)
+
     with open(filename, "w+") as out_lmp:
         out_lmp.write("LAMMPS data file\n\n")
         out_lmp.write(f"{len(coordinates)} atoms\n")
         out_lmp.write(f"{len(bond_list)} bonds\n")
         out_lmp.write("\n")
-        out_lmp.write("1 atom types\n")
+        out_lmp.write(f"{max_type_id} atom types\n")
         out_lmp.write("1 bond types\n")
         out_lmp.write("\n")
         out_lmp.write(f"0.0 {box_size} xlo xhi\n")
         out_lmp.write(f"0.0 {box_size} ylo yhi\n")
         out_lmp.write(f"0.0 {box_size} zlo zhi\n")
         out_lmp.write("\n")
+        out_lmp.write("Masses\n\n")
+        # Write masses for each atom type
+        for type_id in range(1, max_type_id + 1):
+            # Find the first atom of this type_id to get its mass
+            mass = next(atom.mass for atom in chain_description if atom.type_id == type_id)
+            out_lmp.write(f"{type_id} {mass}\n")
+        out_lmp.write("\n")
         out_lmp.write("Atoms\n\n")
         # Format: atom-ID molecule-ID atom-type x y z
-        for i, (atom_id, _, res_id, _) in enumerate(chain_description, start=1):
+        for i, atom in enumerate(chain_description, start=1):
             x, y, z = coordinates[i - 1]
-            out_lmp.write(f"{i} {res_id} 1 {x} {y} {z}\n")  # Changed atom type to always be 1
+            out_lmp.write(f"{i} {atom.residue_id} {atom.type_id} {x} {y} {z}\n")
         out_lmp.write("\n")
         out_lmp.write("Bonds\n\n")
-        for i, (atom_i, atom_j) in enumerate(bond_list, start=1):
-            out_lmp.write(f"{i} 1 {atom_i} {atom_j}\n")
+        for i, bond in enumerate(bond_list, start=1):
+            out_lmp.write(f"{i} 1 {bond.atom_i} {bond.atom_j}\n")
