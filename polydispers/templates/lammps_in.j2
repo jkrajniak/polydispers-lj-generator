@@ -1,4 +1,4 @@
-# LAMMPS input script for polymer simulation
+# LAMMPS input script for polymer simulation with multiple bead types
 units           lj
 atom_style      molecular
 pair_style      lj/cut 2.5
@@ -7,10 +7,12 @@ boundary        p p p
 # Set special bonds for FENE potential
 special_bonds   lj 0.0 1.0 1.0
 
-read_data       $output_dir/lj.data
+read_data       {{ data_file }}
 
-# Set mass for atom type 1
-mass            1 1.0
+# Set masses for all atom types
+{%- for type_id, mass in masses.items() %}
+mass            {{ type_id }} {{ mass }}
+{% endfor %}
 
 # Initialize velocities at T=1.0
 velocity        all create 1.0 12345 dist gaussian
@@ -20,7 +22,16 @@ reset_timestep  0
 
 # Define pair and bond styles
 pair_style      lj/cut 2.5
-pair_coeff      1 1 1.0 1.0
+
+# Define pair coefficients for all type combinations
+# Using same LJ parameters for all pairs for now
+{% for type1 in masses.keys() %}
+{%- for type2 in masses.keys() %}
+{%- if type2 >= type1 %}
+pair_coeff      {{ type1 }} {{ type2 }} 1.0 1.0
+{% endif %}
+{%- endfor %}
+{% endfor %}
 
 bond_style      fene
 bond_coeff      1 30.0 1.5 1.0 1.0
@@ -43,12 +54,12 @@ thermo_modify   format 3 %.6f  # special format for density
 # Save detailed thermo data to file with reduced precision
 fix             thermo all print 1000 &
                 "%d %.3f %.3f %.6f %.2f %.2f %.2f" &
-                file $output_dir/thermo.dat &
+                file {{ output_dir }}/thermo.dat &
                 title "# Step Temp Press Density TotalPE BondE PairE" &
                 screen no
 
 # Trajectory output with reduced precision
-dump            1 all custom 1000 $output_dir/traj.lammpstrj id type mol x y z
+dump            1 all custom 1000 {{ output_dir }}/traj.lammpstrj id type mol x y z
 dump_modify     1 format float %.4f
 
 # First minimize to fix any bad contacts or stretched bonds
