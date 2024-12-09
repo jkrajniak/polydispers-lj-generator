@@ -1,13 +1,9 @@
 import os
 import random
-from functools import partial
-from multiprocessing import Pool
 
 import click
 import numpy as np
-from tqdm import tqdm
 
-from polydispers.chain_generator import generate_kremer_grest_chain
 from polydispers.files_io import (
     read_topology_file,
     write_lammps_data,
@@ -16,43 +12,8 @@ from polydispers.files_io import (
     write_topology_file,
     write_xyz_file,
 )
-from polydispers.stats import sz_distribution_inverse_transform
-
-
-def generate_polymer_system(
-    num_chains, Mn, PDI, box_size, bond_length=1.0, bead_radius=1.0, disable_pbc=False
-) -> tuple[np.array, list[int]]:
-    """
-    Generates a system of Kremer-Grest chains with Schulz-Zimm
-    molecular weight distribution in 3D space.
-
-    Args:
-      num_chains: Number of chains to generate.
-      Mn: Number-average molecular weight.
-      PDI: Polydispersity index.
-      bond_length: Equilibrium bond length for FENE potential.
-      bead_radius: Radius of the beads.
-      box_size: Size of the cubic box.
-      disable_pbc: Whether to disable periodic boundary conditions.
-    Returns:
-        A tuple with the numpy array of shape (N, 3) containing the bead coordinates and a list of chain lengths.
-    """
-    chain_lengths = sz_distribution_inverse_transform(Mn, PDI, size=num_chains).astype(int)
-    print(chain_lengths)
-    print(f"Sum of chain lengths: {sum(chain_lengths)}, difference: {sum(chain_lengths) - Mn}")
-    polymer_system = []
-
-    # Generate chains in parallel
-    fn_generator = partial(
-        generate_kremer_grest_chain,
-        bond_length=bond_length,
-        bead_radius=bead_radius,
-        box_size=box_size,
-        disable_pbc=disable_pbc,
-    )
-    with Pool(processes=4) as pool:
-        polymer_system = list(tqdm(pool.imap(fn_generator, chain_lengths), total=num_chains))
-    return polymer_system, chain_lengths
+from polydispers.input_config import load_config
+from polydispers.system_generator import generate_polymer_system
 
 
 @click.group()
@@ -62,24 +23,36 @@ def cli():
 
 
 @cli.command()
-@click.option("--num-chains", type=int, default=1, help="Number of chains to generate.")
-@click.option("--mn", type=float, default=50, help="Number-average molecular weight.")
-@click.option("--pdi", type=float, default=1.2, help="Polydispersity index.")
-@click.option("--box-size", type=float, default=500, help="Size of the cubic box. (Angstrom)")
-@click.option("--output-dir", type=str, default=".", help="Output directory.")
-@click.option("--seed", type=int, default=42, help="Random seed.")
-def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
+@click.option("--config", type=str, default="input_config.yaml", help="Path to the input configuration file.")
+def generate(config):
     """Generate a polymer system with specified parameters."""
-    np.random.seed(seed)
-    random.seed(seed)
 
-    bond_length = 0.85
-    bead_radius = 1.0
-    single_chain_box_size = box_size
+    config = load_config(config)
 
-    polymer_system, chain_lengths = generate_polymer_system(
-        num_chains, mn, pdi, single_chain_box_size, bond_length, bead_radius, True
-    )
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+
+    output_dir = config.output_dir
+    box_size = config.box_size
+
+    num_chains = config.num_chains
+    mn = config.mn
+    pdi = config.pdi
+    bond_length = config.polymer.bond_length
+    bead_radius = config.polymer.bead_radius
+
+    print("Polydispers Generator, version 0.1.0")
+    print("-" * 100)
+    print(f"Number of chains: {num_chains}")
+    print(f"Number-average molecular weight: {mn}")
+    print(f"Polydispersity index: {pdi}")
+    print(f"Bond length: {bond_length}")
+    print(f"Bead radius: {bead_radius}")
+    print(f"Box size: {box_size}")
+    print("-" * 100)
+    print("Generating polymer system...")
+
+    polymer_system, chain_lengths = generate_polymer_system(config)
 
     output_dir = f"{output_dir}/chains_{num_chains}_Mn{mn}_PDI{pdi}"
 
@@ -93,11 +66,10 @@ def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
         write_xyz_file(f"{output_dir}/chain_{i}.xyz", chain)
         filenames.append(f"{output_dir}/chain_{i}.xyz")
 
-    print(f"Box size: {single_chain_box_size}")
     write_packmol_input(f"{output_dir}/lj.xyz", filenames, box_size, f"{output_dir}/packmol_input.txt")
 
     # Write topology file
-    write_topology_file(f"{output_dir}/topology.yaml", box_size, chain_lengths)
+    write_topology_file(f"{output_dir}/topology.yaml", config, chain_lengths)
 
     print(f"\nTopology file written to {output_dir}/topology.yaml")
     print(f"Packmol input file written to {output_dir}/packmol_input.txt\n")
@@ -111,7 +83,7 @@ def generate(num_chains, mn, pdi, box_size, output_dir, seed, disable_pbc):
     print("2. Prepare LAMMPS input files for the generated polymer system.\n")
     print(
         (
-            f"polydispers-lammps --topology-file {output_dir}/topology.yaml "
+            f"polydispers lammps --topology-file {output_dir}/topology.yaml "
             f"--coordinates {output_dir}/lj.xyz "
             f"--output-file {output_dir}/lj.data\n"
         )

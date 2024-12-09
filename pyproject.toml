@@ -16,7 +16,8 @@ dependencies = [
     "scipy",
     "tqdm",
     "pyyaml",
-    "click"
+    "click",
+    "jinja2",
 ]
 
 [tool.setuptools.packages.find]

@@ -4,6 +4,9 @@ from string import Template
 import numpy as np
 import yaml
 
+from polydispers.input_config import InputConfig
+from polydispers.topology_config import TopologyConfig
+
 
 def write_gro_file(
     filename: str,
@@ -159,69 +162,92 @@ def write_xyz_file(filename: str, coordinates: np.ndarray, atomname: str = "C") 
             f.write(f"{atomname} {x} {y} {z}\n")
 
 
-def write_topology_file(
-    filename: str, box_size: float, chain_lengths: list[int], atomname: str = "C", resname: str = "MOL"
-) -> None:
-    """Generates a topology file for the system"""
-    # atom_id, atom_name, residue_id, residue_name
-    chain_description = []
-    for res_id, chain_length in enumerate(chain_lengths, 1):
-        for j in range(chain_length):
-            # Atom id is continuous across all chains
-            atom_id = sum(chain_lengths[: res_id - 1]) + j + 1
-            chain_description.append((atom_id, atomname, res_id, resname))
+def write_topology_file(filename: str, config: InputConfig, num_repeat_units: list[int]) -> None:
+    """Generates a topology file for the system.
 
-    bond_list = []
-    # atom_i, atom_j
-    for res_id, chain_length in enumerate(chain_lengths, 1):
-        for j in range(1, chain_length):
-            atom_i = sum(chain_lengths[: res_id - 1]) + j
-            atom_j = sum(chain_lengths[: res_id - 1]) + j + 1
-            bond_list.append((atom_i, atom_j))
-
-    # Write YAML file that will as a value keep CSV values.
-    # chain_description:
-    #     columns: ["atom_id", "atom_name", "residue_id", "residue_name"]
-    #     values: <
-    #         1, C, 1, MOL
-    #         2, C, 1, MOL
+    Args:
+        filename: Output topology filename
+        config: Input configuration containing topology and mass information
+        num_repeat_units: List of number of repeat units for each chain
+    """
+    # Write YAML file
     with open(filename, "w+") as out_yaml:
-        out_yaml.write(f"box_size: {box_size}\n")
+        # Write box size
+        out_yaml.write(f"box_size: {config.box_size}\n")
+
+        # Write chain description
         out_yaml.write("chain_description:\n")
-        out_yaml.write('    columns: ["atom_id", "atom_name", "residue_id", "residue_name"]\n')
-        out_yaml.write("    values: |\n")
-        for row in chain_description:
-            out_yaml.write(f"        {', '.join(map(str, row))}\n")
+        out_yaml.write(f'    repeat_unit_topology: "{config.repeat_unit_topology}"\n')
+        out_yaml.write("    chain_lengths: [")
+        out_yaml.write(", ".join(map(str, num_repeat_units)))
+        out_yaml.write("]\n")
 
-        out_yaml.write("\n")
-        out_yaml.write("bond_list:\n")
-        out_yaml.write('    columns: ["atom_i", "atom_j"]\n')
-        out_yaml.write("    values: |\n")
-        for row in bond_list:
-            out_yaml.write(f"        {', '.join(map(str, row))}\n")
+        # Write polymer information
+        out_yaml.write("polymer:\n")
+        out_yaml.write("    bead_types:\n")
+        for bead_type in set(config.repeat_unit_topology):
+            out_yaml.write(f"        {bead_type}:\n")
+            out_yaml.write(f"            mass: {config.bead_masses[bead_type]}\n")
+            out_yaml.write(f"            type_id: {ord(bead_type) - ord('A') + 1}\n")
 
 
-def read_topology_file(filename: str) -> tuple[list[tuple[int, str, int, str]], list[tuple[int, int]], float]:
-    """Reads a topology file and returns chain_description, bond_list and box_size"""
-    chain_description: list[tuple[int, str, int, str]] = []
-    bond_list: list[tuple[int, int]] = []
+def read_topology_file(filename: str) -> tuple[list[tuple], list[tuple[int, int]], float]:
+    """Reads a topology file and returns chain_description, bond_list and box_size
 
+    Args:
+        filename: Path to the topology YAML file
+
+    Returns:
+        Tuple of (chain_description, bond_list, box_size) where:
+        - chain_description: List of (atom_id, atom_name, residue_id, residue_name, mass)
+        - bond_list: List of (atom_i, atom_j)
+        - box_size: Box size value
+    """
     with open(filename, "r") as in_yaml:
         yaml_data = yaml.safe_load(in_yaml)
 
-    # split yaml_data['chain_description']['values'] into a list of tuples
-    chain_description = [
-        tuple(map(str.strip, row.split(",")))
-        for row in yaml_data["chain_description"]["values"].split("\n")
-        if row.strip()
-    ]
+    topology = TopologyConfig.from_dict(yaml_data)
 
-    # split yaml_data['bond_list']['values'] into a list of tuples
-    bond_list = [
-        tuple(map(str.strip, row.split(","))) for row in yaml_data["bond_list"]["values"].split("\n") if row.strip()
-    ]
+    # Generate chain description
+    chain_description = []
+    atom_id = 1
 
-    return chain_description, bond_list, yaml_data["box_size"]
+    # For each chain
+    for chain_idx, num_units in enumerate(topology.chain_description.chain_lengths, start=1):
+        # For each repeat unit in the chain
+        for _ in range(num_units):
+            # For each bead in the repeat unit topology
+            for bead_type in topology.chain_description.repeat_unit_topology:
+                chain_description.append(
+                    (
+                        atom_id,  # atom_id
+                        bead_type,  # atom_name
+                        chain_idx,  # residue_id
+                        "MOL",  # residue_name
+                        topology.polymer.bead_types[bead_type].mass,  # mass
+                    )
+                )
+                atom_id += 1
+
+    # Generate bond list
+    bond_list = []
+
+    # For each chain
+    for chain_idx, num_units in enumerate(topology.chain_description.chain_lengths):
+        chain_start = (
+            sum(
+                len(topology.chain_description.repeat_unit_topology) * n
+                for n in topology.chain_description.chain_lengths[:chain_idx]
+            )
+            + 1
+        )
+        chain_length = len(topology.chain_description.repeat_unit_topology) * num_units
+
+        # Connect atoms within the chain
+        for j in range(chain_start, chain_start + chain_length - 1):
+            bond_list.append((j, j + 1))
+
+    return chain_description, bond_list, topology.box_size
 
 
 def write_lammps_input(filename, data_file):

@@ -1,93 +1,199 @@
-# Polydispers System Generator
+# Polydisperse LJ Polymer Generator
 
-A Python tool for generating polydisperse polymer systems with Schulz-Zimm molecular weight distribution for LAMMPS simulations.
+A tool for generating polydisperse polymer systems for LAMMPS simulations.
+
+## Workflow
+
+### Data Flow
+
+```mermaid
+graph TD
+    A[input_config.yaml] --> B[Generate System]
+    B --> C[Chain Coordinates]
+    B --> D[Topology File]
+    C --> E[Packmol]
+    E --> F[Packed System]
+    D --> G[LAMMPS Data]
+    F --> G
+    D --> H[LAMMPS Input]
+    G --> I[LAMMPS Simulation]
+    H --> I
+    I --> J[Trajectory]
+    I --> K[Thermodynamics]
+
+    subgraph Generation
+        B
+        C
+        D
+    end
+
+    subgraph Packing
+        E
+        F
+    end
+
+    subgraph Simulation
+        G
+        H
+        I
+        J
+        K
+    end
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style E fill:#bfb,stroke:#333,stroke-width:2px
+    style I fill:#fbf,stroke:#333,stroke-width:2px
+```
+
+### Command Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as flow
+    participant G as generate
+    participant P as packmol
+    participant L as lammps
+    participant S as simulation
+
+    U->>F: polydispers flow
+    activate F
+    F->>G: Generate System?
+    G-->>F: Generated Files
+    F->>P: Run Packmol?
+    P-->>F: Packed System
+    F->>L: Prepare LAMMPS?
+    L-->>F: LAMMPS Files
+    F->>S: Run Simulation?
+    S-->>F: Results
+    deactivate F
+
+    Note over U,S: Alternative: Manual Steps
+    U->>G: polydispers generate
+    G-->>U: Generated Files
+    U->>P: packmol < input
+    P-->>U: Packed System
+    U->>L: polydispers lammps
+    L-->>U: LAMMPS Files
+    U->>S: lmp -in script.in
+    S-->>U: Results
+```
 
 ## Features
 
-- Generate polymer systems with specified polydispersity index (PDI) and number-average molecular weight (Mn)
-- Parallel chain generation for improved performance
+- Generate polymer systems with specified:
+  - Number of chains
+  - Number-average molecular weight (Mn)
+  - Polydispersity index (PDI)
+  - Box size
+  - Bond length
+  - Bead radius
+- Support for different bead types (A-B polymers)
 - Automatic LAMMPS input file generation
 - Integration with Packmol for system packing
-- Support for periodic boundary conditions
+
+## Requirements
+
+- Python 3.8+
+- Packmol
+- LAMMPS (any variant: lmp, lmp_serial, or lmp_mpi)
 
 ## Installation
 
 1. Clone the repository:
-
 ```bash
-git clone https://github.com/jkrajniak/polydispers-lj-generator.git
+git clone https://github.com/yourusername/polydispers-lj-generator.git
 cd polydispers-lj-generator
 ```
 
-2. Install the package:
-
+2. Create and activate a virtual environment:
 ```bash
-pip install .
+python -m venv .venv
+source .venv/bin/activate  # On Unix/macOS
+# or
+.venv\Scripts\activate  # On Windows
 ```
 
-## Dependencies
-
-- numpy
-- scipy
-- tqdm
-- pyyaml
-- click
-- packmol (external dependency)
-- LAMMPS (external dependency)
+3. Install the package:
+```bash
+pip install -e .
+```
 
 ## Usage
 
-### 1. Generate a Polymer System
+### Configuration
 
-```bash
-polydispers generate \
-    --num-chains 100 \
-    --mn 50 \
-    --pdi 1.2 \
-    --box-size 500 \
-    --output-dir ./output \
-    --seed 42
+Create an input configuration file (e.g., `input_config.yaml`):
+
+```yaml
+num_chains: 10
+mn: 1000
+pdi: 1.2
+box_size: 100
+output_dir: ./sys1
+seed: 42
+polymer:
+  bond_length: 0.85
+  bead_radius: 1.0
+  repeat_unit_topology: AB
+  bead_types:
+    A:
+      mass: 1.0
+      type_id: 1
+    B:
+      mass: 1.0
+      type_id: 2
 ```
 
-Options:
-- `--num-chains`: Number of polymer chains to generate
-- `--mn`: Number-average molecular weight
-- `--pdi`: Polydispersity index
-- `--box-size`: Size of the cubic simulation box (Angstrom)
-- `--output-dir`: Output directory for generated files
-- `--seed`: Random seed for reproducibility
-- `--disable-pbc`: Flag to disable periodic boundary conditions
+### Commands
 
-### 2. Prepare LAMMPS Input Files
-
+1. Generate polymer system:
 ```bash
-polydispers lammps \
-    --topology-file output/topology.yaml \
-    --coordinates output/lj.xyz
+polydispers generate --config input_config.yaml
 ```
 
-Options:
-- `--topology-file`: Path to the generated topology file
-- `--coordinates`: Path to the coordinates file
+2. Interactive workflow (recommended):
+```bash
+polydispers flow --config input_config.yaml
+```
+This will guide you through:
+- System generation
+- Packmol packing
+- LAMMPS file preparation
+- LAMMPS simulation
+
+3. Prepare LAMMPS files separately:
+```bash
+polydispers lammps --topology-file topology.yaml --coordinates coordinates.xyz
+```
 
 ## Output Files
 
-The generator creates several files in the output directory:
+The tool generates several files in the output directory:
+- `topology.yaml`: System topology description
 - `chain_*.xyz`: Individual chain coordinates
-- `topology.yaml`: System topology information
-- `packmol_input.txt`: Packmol input file
-- `lj.xyz`: Final packed system coordinates
+- `packmol_input.txt`: Packmol input script
+- `lj.xyz`: Packed system coordinates (after running Packmol)
 - `lj.data`: LAMMPS data file
 - `lj.in`: LAMMPS input script
 - `instructions.sh`: Shell script with next steps
+- `thermo.dat`: LAMMPS thermodynamic output (after simulation)
+- `traj.lammpstrj`: LAMMPS trajectory file (after simulation)
 
-## Workflow
+## LAMMPS Simulation Details
 
-1. Generate the initial system using `polydispers generate`
-2. Run Packmol to pack the system
-3. Generate LAMMPS input files using `polydispers lammps`
-4. Run the LAMMPS simulation
+The generated LAMMPS input script includes:
+- LJ potential with cutoff 2.5σ
+- FENE bonds
+- NPT equilibration with Berendsen thermostat
+- NVT production run
+- Trajectory and thermodynamic output
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.

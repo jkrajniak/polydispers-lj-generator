@@ -1,40 +1,55 @@
 import numpy as np
 from scipy.special import gamma, gammainc
 
+from polydispers.input_config import InputConfig
 
-def sz_distribution_inverse_transform(Mn, PDI, size=1):
-  """
-  Generates molecular weights from the Schulz-Zimm distribution
-  using inverse transform sampling with the Newton-Raphson method.
 
-  Args:
-    Mn: Number-average molecular weight.
-    PDI: Polydispersity index.
-    size: Number of molecular weights to generate.
+def sz_distribution_inverse_transform(config: InputConfig, size=1):
+    """
+    Generates chain lengths in terms of repeat units from the Schulz-Zimm distribution
+    using inverse transform sampling with the Newton-Raphson method.
 
-  Returns:
-    An array of molecular weights.
-  """
-  Mn_local = Mn / size
-  z = 1 / (PDI - 1)
-  u = np.random.uniform(0, 1, size=size)
+    Args:
+        config: Input configuration containing Mn (total system molecular weight), PDI, and topology information
+        size: Number of chains to generate
 
-  def sz_cdf(x):
-    return gammainc(z + 1, (z + 1) * x / Mn_local)
+    Returns:
+        Tuple of (molecular_weights, num_repeat_units)
+    """
+    # Calculate mass of one repeat unit and local Mn (per chain)
+    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
+    mn_per_chain = config.mn / config.num_chains
 
-  def sz_cdf_derivative(x):
-    return ((z + 1) / Mn_local) * ((z + 1) * x / Mn_local)**z * np.exp(-(z + 1) * x / Mn_local) / gamma(z + 1)
+    # Convert Mn to target number of repeat units
+    # We divide by repeat_unit_mass because we want the number of repeat units
+    target_n = mn_per_chain / repeat_unit_mass
 
-  molecular_weights = np.zeros(size)
-  for i in range(size):
-    x = Mn_local  # Initial guess
-    tolerance = 1e-6
-    max_iterations = 100
-    for _ in range(max_iterations):
-      x_next = x - (sz_cdf(x) - u[i]) / sz_cdf_derivative(x)
-      if abs(x_next - x) < tolerance:
-        break
-      x = x_next
-    molecular_weights[i] = x
+    # Use target_n for the distribution calculations
+    z = 1 / (config.pdi - 1)
+    u = np.random.uniform(0, 1, size=size)
 
-  return molecular_weights
+    def sz_cdf(x):
+        return gammainc(z + 1, (z + 1) * x / target_n)
+
+    def sz_cdf_derivative(x):
+        return ((z + 1) / target_n) * ((z + 1) * x / target_n) ** z * np.exp(-(z + 1) * x / target_n) / gamma(z + 1)
+
+    # Generate number of repeat units
+    num_repeat_units = np.zeros(size, dtype=int)
+    for i in range(size):
+        x = target_n  # Initial guess
+        tolerance = 1e-6
+        max_iterations = 100
+        for _ in range(max_iterations):
+            x_next = x - (sz_cdf(x) - u[i]) / sz_cdf_derivative(x)
+            if abs(x_next - x) < tolerance:
+                break
+            x = x_next
+
+        # Round to nearest integer for number of repeat units
+        num_repeat_units[i] = round(x)
+
+    # Calculate molecular weights by multiplying number of repeat units by repeat unit mass
+    molecular_weights = num_repeat_units * repeat_unit_mass
+
+    return molecular_weights, num_repeat_units
