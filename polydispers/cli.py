@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import sys
@@ -5,7 +6,12 @@ from typing import Optional
 
 import click
 
-from polydispers.core import generate_polymer_files, prepare_lammps_files
+from polydispers.core import (
+    GeneratedSystem,
+    LammpsFiles,
+    generate_polymer_files,
+    prepare_lammps_files,
+)
 from polydispers.input_config import load_config
 
 
@@ -111,6 +117,13 @@ def flow(config):
                 return False
             sys.exit(1)
 
+    def check_file_exists(filepath, description):
+        """Check if file exists and ask to skip if it does."""
+        if os.path.exists(filepath):
+            click.echo(f"Found existing {description} at {filepath}")
+            return click.confirm("Skip this step?", default=True)
+        return False
+
     # Check external tools before starting
     check_requirements()
 
@@ -127,6 +140,9 @@ def flow(config):
                 "Choose LAMMPS executable", type=click.Choice(available_variants), default=available_variants[0]
             )
 
+    result = None
+    lammps_result = None
+
     # Step 1: Generate polymer system
     if click.confirm("Generate polymer system?", default=True):
         click.echo("Generating polymer system...")
@@ -134,25 +150,43 @@ def flow(config):
         result = generate_polymer_files(config)
         click.echo(f"Polymer system generated in {result.output_dir}")
     else:
-        sys.exit(0)
+        # If skipping generation, need to load existing config and find files
+        config = load_config(config)
+        output_dir = f"{config.output_dir}/chains_{config.num_chains}_Mn{config.mn}_PDI{config.pdi}"
+        result = GeneratedSystem(
+            output_dir=output_dir,
+            topology_file=f"{output_dir}/topology.yaml",
+            packmol_input_file=f"{output_dir}/packmol_input.txt",
+            chain_files=[f"{output_dir}/chain_{i}.xyz" for i in range(config.num_chains)],
+            instructions_file=f"{output_dir}/instructions.sh",
+        )
 
     # Step 2: Run packmol
-    if click.confirm("Run packmol to pack the polymer chains?", default=True):
-        click.echo("Running packmol...")
-        success = run_command(f"packmol < {result.packmol_input_file}")
-        if success:
-            click.echo("Packmol completed successfully")
+    packed_xyz = f"{result.output_dir}/lj.xyz"
+    if not check_file_exists(packed_xyz, "packed system"):
+        if click.confirm("Run packmol to pack the polymer chains?", default=True):
+            click.echo("Running packmol...")
+            success = run_command(f"packmol < {result.packmol_input_file}")
+            if success:
+                click.echo("Packmol completed successfully")
 
     # Step 3: Prepare LAMMPS files
-    if click.confirm("Prepare LAMMPS input files?", default=True):
-        click.echo("Preparing LAMMPS files...")
-        lammps_result = prepare_lammps_files(result.topology_file, f"{result.output_dir}/lj.xyz")
-        click.echo(f"LAMMPS files prepared: {lammps_result.data_file}")
+    lammps_data = f"{result.output_dir}/lj.data"
+    lammps_input = f"{result.output_dir}/lj.in"
+    if not check_file_exists(lammps_data, "LAMMPS data file"):
+        if click.confirm("Prepare LAMMPS input files?", default=True):
+            click.echo("Preparing LAMMPS files...")
+            lammps_result = prepare_lammps_files(result.topology_file, packed_xyz)
+            click.echo(f"LAMMPS files prepared: {lammps_result.data_file}")
+    else:
+        lammps_result = LammpsFiles(data_file=lammps_data, input_file=lammps_input)
 
     # Step 4: Run LAMMPS
-    if click.confirm("Run LAMMPS simulation?", default=True):
-        click.echo("Running LAMMPS simulation...")
-        run_command(f"{lammps_exe} -in {lammps_result.input_file}")
+    thermo_file = f"{result.output_dir}/thermo.dat"
+    if not check_file_exists(thermo_file, "LAMMPS output"):
+        if click.confirm("Run LAMMPS simulation?", default=True):
+            click.echo("Running LAMMPS simulation...")
+            run_command(f"{lammps_exe} -in {lammps_result.input_file}")
 
     click.echo("Workflow completed!")
 
