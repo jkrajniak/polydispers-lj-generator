@@ -28,6 +28,7 @@ class GeneratedSystem:
     packmol_input_file: str
     chain_files: List[str]
     instructions_file: str
+    chain_lengths: List[int]
 
 
 @dataclass
@@ -86,6 +87,7 @@ def generate_polymer_files(config: InputConfig) -> GeneratedSystem:
         packmol_input_file=packmol_file,
         chain_files=chain_files,
         instructions_file=instructions_file,
+        chain_lengths=chain_lengths,
     )
 
 

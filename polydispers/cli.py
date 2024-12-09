@@ -5,6 +5,8 @@ import sys
 from typing import Optional
 
 import click
+import numpy as np
+from scipy.stats import gamma
 
 from polydispers.core import (
     GeneratedSystem,
@@ -55,6 +57,21 @@ def cli():
     pass
 
 
+def calculate_sz_parameters(mn: float, pdi: float):
+    """Calculate Schulz-Zimm distribution parameters.
+
+    Args:
+        mn: Number-average molecular weight
+        pdi: Polydispersity index
+
+    Returns:
+        Tuple of (k, theta) parameters for the gamma distribution
+    """
+    k = 1.0 / (pdi - 1.0)  # shape parameter
+    theta = mn * (pdi - 1.0)  # scale parameter
+    return k, theta
+
+
 @cli.command()
 @click.option("--config", type=str, default="input_config.yaml", help="Path to the input configuration file.")
 def generate(config):
@@ -73,6 +90,32 @@ def generate(config):
     print("Generating polymer system...")
 
     result = generate_polymer_files(config)
+
+    # Get chain lengths and calculate statistics
+    chain_lengths = np.array(result.chain_lengths)
+
+    # Calculate repeat unit mass
+    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
+
+    # Calculate target chain length in repeat units
+    target_chain_length = (config.mn / config.num_chains) / repeat_unit_mass
+
+    # Calculate theoretical S-Z distribution parameters
+    k, theta = calculate_sz_parameters(target_chain_length, config.pdi)
+
+    # Calculate statistics
+    print("\nDistribution Statistics:")
+    print("-" * 100)
+    print("                    Generated    Theoretical S-Z")
+    print("-" * 100)
+    print(f"Minimum:           {min(chain_lengths):11.1f}    {0:11.1f}")
+    print(f"Maximum:           {max(chain_lengths):11.1f}    {np.inf:>11}")
+    print(f"Mean (Mn):         {np.mean(chain_lengths):11.1f}    {target_chain_length:11.1f}")
+    print(f"Std dev:           {np.std(chain_lengths):11.1f}    {target_chain_length * np.sqrt(config.pdi - 1):11.1f}")
+    print(f"PDI (Mw/Mn):       {1 + np.var(chain_lengths) / np.mean(chain_lengths)**2:11.3f}    {config.pdi:11.3f}")
+    print(f"Skewness:          {gamma.stats(k, moments='s'):11.3f}    {2 / np.sqrt(k):11.3f}")
+    print(f"Kurtosis:          {gamma.stats(k, moments='k'):11.3f}    {6 / k:11.3f}")
+    print("-" * 100)
 
     print(f"\nTopology file written to {result.topology_file}")
     print(f"Packmol input file written to {result.packmol_input_file}\n")
