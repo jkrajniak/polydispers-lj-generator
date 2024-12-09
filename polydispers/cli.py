@@ -14,7 +14,7 @@ from polydispers.core import (
     generate_polymer_files,
     prepare_lammps_files,
 )
-from polydispers.input_config import load_config
+from polydispers.input_config import InputConfig, load_config
 
 
 def check_command(cmd: str) -> bool:
@@ -72,6 +72,37 @@ def calculate_sz_parameters(mn: float, pdi: float):
     return k, theta
 
 
+def print_distribution_statistics(chain_lengths: np.ndarray, config: InputConfig):
+    """Print distribution statistics for the generated system.
+
+    Args:
+        chain_lengths: Array of chain lengths in repeat units
+        config: Input configuration
+    """
+    # Calculate repeat unit mass
+    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
+
+    # Calculate target chain length in repeat units
+    target_chain_length = (config.mn / config.num_chains) / repeat_unit_mass
+
+    # Calculate theoretical S-Z distribution parameters
+    k, theta = calculate_sz_parameters(target_chain_length, config.pdi)
+
+    # Print statistics
+    print("\nDistribution Statistics:")
+    print("-" * 100)
+    print("                    Generated    Theoretical S-Z")
+    print("-" * 100)
+    print(f"Minimum:           {min(chain_lengths):11.1f}    {0:11.1f}")
+    print(f"Maximum:           {max(chain_lengths):11.1f}    {np.inf:>11}")
+    print(f"Mean (Mn):         {np.mean(chain_lengths):11.1f}    {target_chain_length:11.1f}")
+    print(f"Std dev:           {np.std(chain_lengths):11.1f}    {target_chain_length * np.sqrt(config.pdi - 1):11.1f}")
+    print(f"PDI (Mw/Mn):       {1 + np.var(chain_lengths) / np.mean(chain_lengths) ** 2:11.3f}    {config.pdi:11.3f}")
+    print(f"Skewness:          {gamma.stats(k, moments='s'):11.3f}    {2 / np.sqrt(k):11.3f}")
+    print(f"Kurtosis:          {gamma.stats(k, moments='k'):11.3f}    {6 / k:11.3f}")
+    print("-" * 100)
+
+
 @cli.command()
 @click.option("--config", type=str, default="input_config.yaml", help="Path to the input configuration file.")
 def generate(config):
@@ -93,29 +124,7 @@ def generate(config):
 
     # Get chain lengths and calculate statistics
     chain_lengths = np.array(result.chain_lengths)
-
-    # Calculate repeat unit mass
-    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
-
-    # Calculate target chain length in repeat units
-    target_chain_length = (config.mn / config.num_chains) / repeat_unit_mass
-
-    # Calculate theoretical S-Z distribution parameters
-    k, theta = calculate_sz_parameters(target_chain_length, config.pdi)
-
-    # Calculate statistics
-    print("\nDistribution Statistics:")
-    print("-" * 100)
-    print("                    Generated    Theoretical S-Z")
-    print("-" * 100)
-    print(f"Minimum:           {min(chain_lengths):11.1f}    {0:11.1f}")
-    print(f"Maximum:           {max(chain_lengths):11.1f}    {np.inf:>11}")
-    print(f"Mean (Mn):         {np.mean(chain_lengths):11.1f}    {target_chain_length:11.1f}")
-    print(f"Std dev:           {np.std(chain_lengths):11.1f}    {target_chain_length * np.sqrt(config.pdi - 1):11.1f}")
-    print(f"PDI (Mw/Mn):       {1 + np.var(chain_lengths) / np.mean(chain_lengths)**2:11.3f}    {config.pdi:11.3f}")
-    print(f"Skewness:          {gamma.stats(k, moments='s'):11.3f}    {2 / np.sqrt(k):11.3f}")
-    print(f"Kurtosis:          {gamma.stats(k, moments='k'):11.3f}    {6 / k:11.3f}")
-    print("-" * 100)
+    print_distribution_statistics(chain_lengths, config)
 
     print(f"\nTopology file written to {result.topology_file}")
     print(f"Packmol input file written to {result.packmol_input_file}\n")
@@ -191,6 +200,9 @@ def flow(config):
         click.echo("Generating polymer system...")
         config = load_config(config)
         result = generate_polymer_files(config)
+        # Print distribution statistics
+        chain_lengths = np.array(result.chain_lengths)
+        print_distribution_statistics(chain_lengths, config)
         click.echo(f"Polymer system generated in {result.output_dir}")
     else:
         # If skipping generation, need to load existing config and find files
@@ -202,6 +214,7 @@ def flow(config):
             packmol_input_file=f"{output_dir}/packmol_input.txt",
             chain_files=[f"{output_dir}/chain_{i}.xyz" for i in range(config.num_chains)],
             instructions_file=f"{output_dir}/instructions.sh",
+            chain_lengths=[],  # Empty list since we don't have the chain lengths when skipping generation
         )
 
     # Step 2: Run packmol
