@@ -44,6 +44,17 @@ class InputConfig:
         self.output_dir = os.path.abspath(self.output_dir)
         self.polymer = PolymerConfig(**self.polymer)
 
+    @classmethod
+    def from_string(cls, config_string: str) -> "InputConfig":
+        config = yaml.safe_load(config_string)
+        return cls(**config)
+
+    @classmethod
+    def from_file(cls, config_path: str) -> "InputConfig":
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(**config)
+
 
 def load_config(config_path: str) -> InputConfig:
     with open(config_path, "r") as f:

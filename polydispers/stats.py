@@ -4,7 +4,7 @@ from scipy.special import gamma, gammainc
 from polydispers.input_config import InputConfig
 
 
-def sz_distribution_inverse_transform(config: InputConfig, size=1):
+def sz_distribution_inverse_transform(config: InputConfig):
     """
     Generates chain lengths in terms of repeat units from the Schulz-Zimm distribution
     using inverse transform sampling with the Newton-Raphson method.
@@ -23,9 +23,11 @@ def sz_distribution_inverse_transform(config: InputConfig, size=1):
     # We divide by repeat_unit_mass because we want the number of repeat units
     target_n = config.mn / repeat_unit_mass
 
+    num_chains = config.num_chains
+
     # Use target_n for the distribution calculations
     z = 1 / (config.pdi - 1)
-    u = np.random.uniform(0, 1, size=size)
+    u = np.random.uniform(0, 1, size=num_chains)
 
     def sz_cdf(x):
         return gammainc(z + 1, (z + 1) * x / target_n)
@@ -34,8 +36,8 @@ def sz_distribution_inverse_transform(config: InputConfig, size=1):
         return ((z + 1) / target_n) * ((z + 1) * x / target_n) ** z * np.exp(-(z + 1) * x / target_n) / gamma(z + 1)
 
     # Generate number of repeat units
-    num_repeat_units = np.zeros(size, dtype=int)
-    for i in range(size):
+    num_repeat_units = np.zeros(num_chains, dtype=int)
+    for i in range(num_chains):
         x = target_n  # Initial guess
         tolerance = 1e-6
         max_iterations = 100
