@@ -20,7 +20,7 @@ def generate_polymer_system(config: InputConfig) -> tuple[np.array, list[int]]:
         A tuple with the numpy array of shape (N, 3) containing the bead coordinates
         and a list of chain lengths.
     """
-    molecular_weights, chain_lengths = sz_distribution_inverse_transform(config, config.num_chains)
+    molecular_weights, chain_lengths = sz_distribution_inverse_transform(config)
 
     # Calculate repeat unit mass for clearer output
     repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)

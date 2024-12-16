@@ -51,7 +51,10 @@ def generate_polymer_files(config: InputConfig) -> GeneratedSystem:
     np.random.seed(config.seed)
     random.seed(config.seed)
 
-    output_dir = f"{config.output_dir}/chains_{config.num_chains}_Mn{config.mn}_PDI{config.pdi}"
+    output_dir = (
+        f"{config.output_dir}/chains_{config.polymer.repeat_unit_topology}_num_chains_{config.num_chains}_"
+        f"Mn_{config.mn}_PDI_{config.pdi}"
+    )
     os.makedirs(output_dir, exist_ok=True)
 
     # Generate polymer system
