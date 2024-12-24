@@ -79,5 +79,8 @@ unfix           mynpt
 
 # -------- NVT Equilibration --------
 # timestep        0.005
-fix             nvt all nvt temp 5.0 5.0 500.0
+fix             nvt all nvt temp 1.0 1.0 500.0
 run             50000
+
+# Write final configuration
+write_data      {{ output_dir }}/final.data

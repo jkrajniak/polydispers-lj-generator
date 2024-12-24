@@ -19,6 +19,14 @@ def sz_distribution_inverse_transform(config: InputConfig):
     # Calculate mass of one repeat unit
     repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
 
+    # In case of PDI = 1, we need to use a different approach, here all chains will have the same length
+    if config.pdi == 1.0:
+        num_repeat_units = np.ones(config.num_chains, dtype=int) * round(
+            config.mn / (config.num_chains * repeat_unit_mass)
+        )
+        molecular_weights = num_repeat_units * repeat_unit_mass
+        return molecular_weights, num_repeat_units
+
     # Convert total Mn to target number of repeat units
     # We divide by repeat_unit_mass because we want the number of repeat units
     target_n = config.mn / repeat_unit_mass

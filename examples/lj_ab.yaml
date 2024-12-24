@@ -1,5 +1,5 @@
-num_chains: 10
-mn: 1000
+num_chains: 100
+mn: 10000
 pdi: 1.2
 box_size: 100
 output_dir: ./sys1
@@ -7,7 +7,7 @@ seed: 42
 polymer:
   bond_length: 0.85
   bead_radius: 1.0
-  repeat_unit_topology: AB
+  repeat_unit_topology: CABBAC
   bead_types:
     A:
       mass: 1.0
@@ -15,3 +15,6 @@ polymer:
     B:
       mass: 1.0
       type_id: 2
+    C:
+      mass: 1.0
+      type_id: 3
