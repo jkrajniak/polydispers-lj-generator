@@ -20,6 +20,8 @@ dependencies = [
     "jinja2",
 ]
 
+
+
 [tool.setuptools.packages.find]
 where = [""]
 include = ["polydispers"]
@@ -40,4 +42,11 @@ line-length = 120
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+]
+
+notebook = [
+    "jupyter",
+    "matplotlib",
+    "seaborn",
+    "pandas"
 ]

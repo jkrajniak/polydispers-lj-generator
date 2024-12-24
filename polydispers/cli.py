@@ -6,7 +6,6 @@ from typing import Optional
 
 import click
 import numpy as np
-from scipy.stats import gamma
 
 from polydispers.core import (
     GeneratedSystem,
@@ -14,7 +13,7 @@ from polydispers.core import (
     generate_polymer_files,
     prepare_lammps_files,
 )
-from polydispers.input_config import InputConfig, load_config
+from polydispers.input_config import load_config
 
 
 def check_command(cmd: str) -> bool:
@@ -57,50 +56,28 @@ def cli():
     pass
 
 
-def calculate_sz_parameters(mn: float, pdi: float):
-    """Calculate Schulz-Zimm distribution parameters.
-
-    Args:
-        mn: Number-average molecular weight
-        pdi: Polydispersity index
-
-    Returns:
-        Tuple of (k, theta) parameters for the gamma distribution
-    """
+def calculate_sz_parameters(target_chain_length, pdi):
+    """Calculate Schulz-Zimm distribution parameters."""
+    if pdi == 1.0:
+        return None, None  # Return None for monodisperse case
     k = 1.0 / (pdi - 1.0)  # shape parameter
-    theta = mn * (pdi - 1.0)  # scale parameter
+    theta = target_chain_length / (k + 1)  # scale parameter
     return k, theta
 
 
-def print_distribution_statistics(chain_lengths: np.ndarray, config: InputConfig):
-    """Print distribution statistics for the generated system.
-
-    Args:
-        chain_lengths: Array of chain lengths in repeat units
-        config: Input configuration
-    """
-    # Calculate repeat unit mass
-    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
-
-    # Calculate target chain length in repeat units
-    target_chain_length = (config.mn / config.num_chains) / repeat_unit_mass
-
-    # Calculate theoretical S-Z distribution parameters
+def print_distribution_statistics(chain_lengths, config):
+    target_chain_length = np.mean(chain_lengths)
     k, theta = calculate_sz_parameters(target_chain_length, config.pdi)
 
-    # Print statistics
-    print("\nDistribution Statistics:")
-    print("-" * 100)
-    print("                    Generated    Theoretical S-Z")
-    print("-" * 100)
-    print(f"Minimum:           {min(chain_lengths):11.1f}    {0:11.1f}")
-    print(f"Maximum:           {max(chain_lengths):11.1f}    {np.inf:>11}")
-    print(f"Mean (Mn):         {np.mean(chain_lengths):11.1f}    {target_chain_length:11.1f}")
-    print(f"Std dev:           {np.std(chain_lengths):11.1f}    {target_chain_length * np.sqrt(config.pdi - 1):11.1f}")
-    print(f"PDI (Mw/Mn):       {1 + np.var(chain_lengths) / np.mean(chain_lengths) ** 2:11.3f}    {config.pdi:11.3f}")
-    print(f"Skewness:          {gamma.stats(k, moments='s'):11.3f}    {2 / np.sqrt(k):11.3f}")
-    print(f"Kurtosis:          {gamma.stats(k, moments='k'):11.3f}    {6 / k:11.3f}")
-    print("-" * 100)
+    print("\nDistribution statistics:")
+    print(f"Number of chains: {len(chain_lengths)}")
+    print(f"Mean chain length: {np.mean(chain_lengths):.2f}")
+    print(f"PDI: {config.pdi:.2f}")
+
+    # Only print Schulz-Zimm parameters if not monodisperse
+    if config.pdi != 1.0:
+        print(f"Schulz-Zimm k parameter: {k:.2f}")
+        print(f"Schulz-Zimm theta parameter: {theta:.2f}")
 
 
 @cli.command()

@@ -93,11 +93,24 @@ sequenceDiagram
 - Automatic LAMMPS input file generation
 - Integration with Packmol for system packing
 
+### Schulz-Zimm Distribution
+
+The tool calculates the Schulz-Zimm distribution parameters based on the target chain length and PDI.
+
+- k parameter: 1 / (PDI - 1)
+- theta parameter: target chain length / (k + 1)
+
+The tool prints the distribution statistics, including the mean chain length, PDI, and Schulz-Zimm parameters.
+
+Example of the output
+![Schulz-Zimm Distribution Statistics](docs/sz_distribution.png)
+
+
 ## Requirements
 
-- Python 3.8+
-- Packmol
-- LAMMPS (any variant: lmp, lmp_serial, or lmp_mpi)
+- Python 3.11+
+- [Packmol](https://m3g.github.io/packmol/)
+- [LAMMPS](https://www.lammps.org/) (any variant: lmp, lmp_serial, or lmp_mpi)
 
 ## Installation
 
@@ -196,4 +209,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
