@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "polydispers-lj-generator"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A tool to generate polydisperse Lennard-Jones systems."
 authors = [
     { name = "Jakub Krajniak", email = "jkrajniak@gmail.com" }
@@ -20,7 +20,8 @@ dependencies = [
     "jinja2",
 ]
 
-
+[tool.setuptools_scm]
+write_to = "polydispers/_version.py"
 
 [tool.setuptools.packages.find]
 where = [""]
