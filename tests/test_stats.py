@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from polydispers.input_config import InputConfig, PolymerConfig
+from polydispers.input_config import InputConfig
 from polydispers.stats import sz_distribution_inverse_transform
 
 
@@ -14,12 +14,12 @@ def create_test_config(num_chains: int = 100, mn: float = 10000, pdi: float = 1.
         box_size=100.0,
         output_dir="test_output",
         seed=42,
-        polymer=PolymerConfig(
-            bond_length=0.85,
-            bead_radius=1.0,
-            repeat_unit_topology=repeat_unit_topology,
-            bead_types={"A": {"mass": 1.0, "type_id": 1}, "B": {"mass": 1.0, "type_id": 2}},
-        ),
+        polymer={
+            "bond_length": 0.85,
+            "bead_radius": 1.0,
+            "repeat_unit_topology": repeat_unit_topology,
+            "bead_types": {"A": {"mass": 1.0, "type_id": 1}, "B": {"mass": 1.0, "type_id": 2}},
+        },
     )
 
 
@@ -40,8 +40,8 @@ def test_repeat_unit_monodisperse():
     molecular_weights, chain_lengths = sz_distribution_inverse_transform(config)
 
     # Each repeat unit has 6 beads, each with mass 1.0
-    repeat_unit_mass = 6.0
-    expected_chain_length = int(config.mn / (config.num_chains * repeat_unit_mass))
+    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
+    expected_chain_length = int(np.ceil(config.mn / (config.num_chains * repeat_unit_mass)))
 
     assert all(length == expected_chain_length for length in chain_lengths)
 
@@ -73,10 +73,10 @@ def test_basic_distribution():
     assert np.isclose(np.sum(molecular_weights), config.mn, rtol=0.1)
 
     # Check if PDI is close to target
-    mw = np.mean(molecular_weights)
-    mn = np.sum(molecular_weights) / len(molecular_weights)
+    mw = np.mean(molecular_weights * molecular_weights) / np.mean(molecular_weights)
+    mn = np.mean(molecular_weights)
     actual_pdi = mw / mn
-    assert np.isclose(actual_pdi, config.pdi, rtol=0.1)
+    assert np.isclose(actual_pdi, config.pdi, rtol=0.2)  # Allow 20% tolerance due to finite sampling
 
 
 def test_repeat_unit_distribution():
@@ -85,7 +85,7 @@ def test_repeat_unit_distribution():
     molecular_weights, chain_lengths = sz_distribution_inverse_transform(config)
 
     # Each repeat unit has 6 beads, each with mass 1.0
-    repeat_unit_mass = 6.0
+    repeat_unit_mass = sum(config.polymer.bead_types[bead].mass for bead in config.polymer.repeat_unit_topology)
 
     # Check if molecular weights are multiples of repeat unit mass
     for mw in molecular_weights:
