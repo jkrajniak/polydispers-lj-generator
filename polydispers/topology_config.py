@@ -11,6 +11,14 @@ class BeadType:
 
 
 @dataclass
+class Bond:
+    """Description of a bond between two atoms"""
+
+    atom_i: int  # Index of first atom (1-based for LAMMPS)
+    atom_j: int  # Index of second atom (1-based for LAMMPS)
+
+
+@dataclass
 class ChainDescription:
     """Description of the chain topology"""
 
