@@ -116,7 +116,7 @@ Example of the output
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/polydispers-lj-generator.git
+git clone https://github.com/jkrajniak/polydispers-lj-generator.git
 cd polydispers-lj-generator
 ```
 
