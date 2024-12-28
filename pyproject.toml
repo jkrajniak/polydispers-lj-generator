@@ -26,8 +26,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Chemistry",
-    "Topic :: Scientific/Engineering :: Polymer Science",
-    "Topic :: Scientific/Engineering :: Molecular Dynamics"
 ]
 
 [tool.setuptools_scm]
