@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "polydispers-lj-generator"
 dynamic = ["version"]
 description = "A tool to generate polydisperse Lennard-Jones systems."
+readme = "README.md"
 authors = [
     { name = "Jakub Krajniak", email = "jkrajniak@gmail.com" }
 ]
@@ -18,6 +19,15 @@ dependencies = [
     "pyyaml",
     "click",
     "jinja2",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Polymer Science",
+    "Topic :: Scientific/Engineering :: Molecular Dynamics"
 ]
 
 [tool.setuptools_scm]
